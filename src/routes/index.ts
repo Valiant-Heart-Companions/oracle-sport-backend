@@ -1,7 +1,8 @@
 import express from 'express';
 import authRoutes from './authRoutes';
 import userRoutes from './userRoutes';
-import sportRoutes from './sportRoutes';
+import sportRoutes from './sportRoutes'
+;
 import eventRoutes from './eventRoutes';
 import betRoutes from './betRoutes';
 import depositRoutes from './depositRoutes';

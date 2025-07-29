@@ -2,6 +2,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import betController from '../controllers/betController';
 import { authenticateToken, authorizeAdmin } from '../middlewares/auth';
+import { asyncHandler } from '../middlewares/errorHandler'
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.put(
   [
     body('status').isIn(['pending', 'won', 'lost', 'canceled'])
   ],
-  betController.updateTicketStatus
+  asyncHandler(betController.updateTicketStatus)
 );
 
 export default router;

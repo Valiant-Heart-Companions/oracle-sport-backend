@@ -1,11 +1,11 @@
-import jwt from 'jsonwebtoken';
+import jwt, { Secret, SignOptions} from 'jsonwebtoken';
 import { User, UserModel } from '../models/user';
 import { AppError } from '../middlewares/errorHandler';
 import dotenv from 'dotenv';
 
 dotenv.config();
-const JWT_SECRET = process.env.JWT_SECRET || 'oracle-sport-secret-key';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const JWT_SECRET: Secret = process.env.JWT_SECRET || 'default_secret_key';
+const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN) as SignOptions["expiresIn"];
 
 const userModel = new UserModel();
 
@@ -62,8 +62,12 @@ export class AuthService {
         username: user.username,
         role: user.role
       },
-      JWT_SECRET as string,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET,
+      { 
+        expiresIn: JWT_EXPIRES_IN,
+        issuer: 'oracle-sport',
+        audience: 'oracle-sport-refresh'
+      }
     );
   }
 }

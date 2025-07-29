@@ -192,7 +192,7 @@ class WithdrawalController {
   }
   
   // Actualizar el estado de un retiro (solo para administradores)
-  async updateWithdrawalStatus(req: Request, res: Response, next: NextFunction) {
+  async updateWithdrawalStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     const client = await pool.connect();
     
     try {
@@ -219,11 +219,12 @@ class WithdrawalController {
       // Si el retiro ya está en el estado solicitado, no hacer nada
       if (withdrawal.status === status) {
         await client.query('ROLLBACK');
-        return res.status(200).json({
+        res.status(200).json({
           success: true,
           message: `El retiro ya está en estado ${status}`,
           data: withdrawal
         });
+        return; // Terminar la ejecución aquí
       }
       
       // Solo se pueden modificar retiros pendientes

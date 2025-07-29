@@ -4,7 +4,7 @@ import authService from '../services/authService';
 import { AppError } from '../middlewares/errorHandler';
 
 export class AuthController {
-  async register(req: Request, res: Response, next: NextFunction) {
+  async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       // Validar entrada
       const errors = validationResult(req);
@@ -24,7 +24,7 @@ export class AuthController {
     }
   }
 
-  async login(req: Request, res: Response, next: NextFunction) {
+  async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       // Validar entrada
       const errors = validationResult(req);

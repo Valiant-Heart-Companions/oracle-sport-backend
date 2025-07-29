@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
+/*
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -12,6 +12,11 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+});*/
+
+const pool = new Pool({  
+  connectionString: process.env.DB_HOST,
+  ssl: { rejectUnauthorized: false }  
 });
 
 // Verificar conexión a la base de datos
