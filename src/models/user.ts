@@ -30,9 +30,9 @@ export class UserModel {
     
     const query = `
       INSERT INTO users 
-        (username, password, first_name, last_name, identification_number, email, phone, country, role)
+        (username, password, first_name, last_name, identification_number, email, phone, country, role, balance)
       VALUES 
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
     
@@ -45,7 +45,8 @@ export class UserModel {
       user.email,
       user.phone,
       user.country,
-      user.role || 'user'
+      user.role || 'user',
+      user.balance || 0
     ];
     
     const result: QueryResult = await this.db.query(query, values);
