@@ -98,15 +98,15 @@ export class BetController {
       for (const selection of selectionDetails) {
         await client.query(
           `INSERT INTO ticket_items (
-             ticket_id, event_id, odds_id, odds_value, bet_type, selection, handicap, total, status
+             ticket_id, event_id, odds_id, odds_value, selection, handicap, total, status
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')`,
           [
             ticketId,
             selection.event_id,
             selection.id,
             selection.price,
-            selection.market_type,
+            //selection.market_type,
             selection.outcome_name,
             selection.handicap,
             selection.total,
@@ -188,7 +188,7 @@ export class BetController {
       // Para cada ticket, obtener sus selecciones
       for (const ticket of tickets) {
         const itemsQuery = `
-          SELECT ti.id, ti.bet_type, ti.selection, ti.odds_value, ti.handicap, ti.total, ti.status,
+          SELECT ti.id, ti.selection, ti.odds_value, ti.handicap, ti.total, ti.status,
                  e.home_team, e.away_team, e.commence_time, e.status as event_status
           FROM ticket_items ti
           JOIN events e ON ti.event_id = e.id
