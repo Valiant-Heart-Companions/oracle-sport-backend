@@ -1,413 +1,433 @@
 import axios from 'axios';
-import dotenv from 'dotenv';
-import pool from '../config/database';
+import { EventModel } from '../models/event';
+import { OddsModel } from '../models/odds';
+import { CompetitionModel } from '../models/competition';
+import { SportModel } from '../models/sport';
 
-dotenv.config();
-const API_KEY = process.env.ODDS_API_KEY || '65195be01e91dc4830cbf3e3ea0a8bf0';
-const API_BASE_URL = 'https://api.the-odds-api.com/v4';
-
-export interface Sport {
-  key: string;
-  group: string;
-  title: string;
-  description: string;
-  active: boolean;
-  has_outrights: boolean;
+export interface OddsApiEvent {
+  id: string;
+  sport_key: string;
+  sport_title: string;
+  commence_time: string;
+  home_team: string;
+  away_team: string;
+  bookmakers: OddsApiBookmaker[];
 }
 
-export interface Outcome {
+export interface OddsApiBookmaker {
+  key: string;
+  title: string;
+  last_update: string;
+  markets: OddsApiMarket[];
+}
+
+export interface OddsApiMarket {
+  key: string;
+  last_update?: string;
+  outcomes: OddsApiOutcome[];
+}
+
+export interface OddsApiOutcome {
   name: string;
   price: number;
   point?: number;
 }
 
-export interface Market {
-  key: string;
-  outcomes: Outcome[];
-}
-
-export interface Bookmaker {
-  key: string;
-  title: string;
-  last_update: string;
-  markets: Market[];
-}
-
-export interface Event {
-  id: string;
+export interface ProcessedEvent {
+  id: number;
+  api_event_id: string;
   sport_key: string;
-  commence_time: string;
   home_team: string;
   away_team: string;
-  bookmakers: Bookmaker[];
+  commence_time: Date;
+  odds: ProcessedOdds[];
 }
 
-export class OddsApiService {
-  async getSports(): Promise<Sport[]> {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/sports`, {
-        params: {
-          apiKey: API_KEY
-        }
-      });
-      
-      // Registrar la solicitud en la base de datos
-      await this.logApiRequest('sports', response.status, response.data);
-      
-      // Verificar el uso de la API a través de las cabeceras
-      console.log('Solicitudes restantes:', response.headers['x-requests-remaining']);
-      console.log('Solicitudes utilizadas:', response.headers['x-requests-used']);
-      
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        console.error('Error al obtener deportes:', error.response.status, error.response.data);
-      } else {
-        console.error('Error al obtener deportes:', error);
-      }
-      throw error;
+export interface ProcessedOdds {
+  market_type: string;
+  outcome_name: string;
+  price: number;
+  handicap?: number;
+  total?: number;
+}
+
+class OddsApiService {
+  private apiKey: string;
+  private baseUrl: string;
+  private eventModel: EventModel;
+  private oddsModel: OddsModel;
+  private competitionModel: CompetitionModel;
+  private sportModel: SportModel;
+
+  constructor() {
+    this.apiKey = process.env.ODDS_API_KEY || '';
+    this.baseUrl = 'https://api.the-odds-api.com/v4';
+    this.eventModel = new EventModel();
+    this.oddsModel = new OddsModel();
+    this.competitionModel = new CompetitionModel();
+    this.sportModel = new SportModel();
+
+    if (!this.apiKey) {
+      console.warn('⚠️  ODDS_API_KEY no está configurada en las variables de entorno');
     }
   }
 
-  async getOddsByEvent(sportKey: string, markets: string = 'h2h,spreads,totals'): Promise<Event[]> {
+  // Obtener lista de deportes disponibles
+  async getSports(): Promise<any[]> {
     try {
-      const regions = 'us'; // Regiones para las que obtener cuotas (us, uk, eu, au)
-      const oddsFormat = 'american'; // Formato de las cuotas (decimal, american)
-      const dateFormat = 'iso'; // Formato de fecha (iso, unix)
-      
-      const response = await axios.get(`${API_BASE_URL}/sports/${sportKey}/odds`, {
+      const response = await axios.get(`${this.baseUrl}/sports/`, {
         params: {
-          apiKey: API_KEY,
+          apiKey: this.apiKey
+        },
+        timeout: 10000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Error obteniendo deportes de Odds API:', error);
+      throw new Error('Error al conectar con la API de deportes');
+    }
+  }
+
+  // Obtener eventos de un deporte específico
+  async getEventsBySport(
+    sportKey: string, 
+    options: {
+      regions?: string;
+      markets?: string;
+      oddsFormat?: string;
+      dateFormat?: string;
+    } = {}
+  ): Promise<OddsApiEvent[]> {
+    try {
+      const {
+        regions = 'us,us2',
+        markets = 'h2h,spreads,totals',
+        oddsFormat = 'american',
+        dateFormat = 'iso'
+      } = options;
+
+      const response = await axios.get(`${this.baseUrl}/sports/${sportKey}/odds/`, {
+        params: {
+          apiKey: this.apiKey,
           regions,
           markets,
           oddsFormat,
           dateFormat
-        }
+        },
+        timeout: 15000
       });
-      
-      // Registrar la solicitud en la base de datos
-      await this.logApiRequest(`odds/${sportKey}`, response.status, response.data);
-      
-      // Verificar el uso de la API a través de las cabeceras
-      console.log('Solicitudes restantes:', response.headers['x-requests-remaining']);
-      console.log('Solicitudes utilizadas:', response.headers['x-requests-used']);
-      console.log('Costo de la última solicitud:', response.headers['x-requests-last']);
-      
+
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        console.error(`Error al obtener cuotas para ${sportKey}:`, error.response.status, error.response.data);
-      } else {
-        console.error(`Error al obtener cuotas para ${sportKey}:`, error);
-      }
-      throw error;
-    }
-  }
-
-  async getUpcomingEvents(): Promise<Event[]> {
-    try {
-      // 'upcoming' devuelve eventos próximos de todos los deportes
-      const sportKey = 'upcoming';
-      const regions = 'us';
-      const markets = 'h2h,spreads,totals';
-      const oddsFormat = 'american';
-      const dateFormat = 'iso';
-      
-      const response = await axios.get(`${API_BASE_URL}/sports/${sportKey}/odds`, {
-        params: {
-          apiKey: API_KEY,
-          regions,
-          markets,
-          oddsFormat,
-          dateFormat
+      console.error(`Error obteniendo eventos para ${sportKey}:`, error);
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          throw new Error('API Key inválida para The Odds API');
         }
-      });
-      
-      // Registrar la solicitud en la base de datos
-      await this.logApiRequest('upcoming', response.status, response.data);
-      
-      // Verificar el uso de la API a través de las cabeceras
-      console.log('Solicitudes restantes:', response.headers['x-requests-remaining']);
-      console.log('Solicitudes utilizadas:', response.headers['x-requests-used']);
-      
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        console.error('Error al obtener eventos próximos:', error.response.status, error.response.data);
-      } else {
-        console.error('Error al obtener eventos próximos:', error);
+        if (error.response?.status === 429) {
+          throw new Error('Límite de solicitudes excedido para The Odds API');
+        }
       }
-      throw error;
+      throw new Error('Error al obtener eventos de la API');
     }
   }
 
-  private async logApiRequest(endpoint: string, status: number, data: any): Promise<void> {
-    try {
-      const query = `
-        INSERT INTO api_requests (endpoint, response_status, response_data)
-        VALUES ($1, $2, $3)
-      `;
-      
-      await pool.query(query, [endpoint, status, JSON.stringify(data)]);
-    } catch (error) {
-      console.error('Error al registrar solicitud a la API:', error);
-    }
+  // Procesar y transformar datos de la API
+  private processApiEvents(apiEvents: OddsApiEvent[]): ProcessedEvent[] {
+    return apiEvents.map(event => {
+      const processedOdds: ProcessedOdds[] = [];
+
+      // Procesar todas las casas de apuestas y sus mercados
+      event.bookmakers.forEach(bookmaker => {
+        bookmaker.markets.forEach(market => {
+          market.outcomes.forEach(outcome => {
+            let processedOdd: ProcessedOdds;
+
+            switch (market.key) {
+              case 'h2h':
+                processedOdd = {
+                  market_type: 'h2h',
+                  outcome_name: this.mapTeamToOutcome(outcome.name, event.home_team, event.away_team),
+                  price: outcome.price
+                };
+                break;
+
+              case 'spreads':
+                processedOdd = {
+                  market_type: 'spread',
+                  outcome_name: this.mapTeamToOutcome(outcome.name, event.home_team, event.away_team),
+                  price: outcome.price,
+                  handicap: outcome.point
+                };
+                break;
+
+              case 'totals':
+                processedOdd = {
+                  market_type: 'totals',
+                  outcome_name: outcome.name.toLowerCase() === 'over' ? 'over' : 'under',
+                  price: outcome.price,
+                  total: outcome.point
+                };
+                break;
+
+              default:
+                return; // Skip unknown market types
+            }
+
+            processedOdds.push(processedOdd);
+          });
+        });
+      });
+
+      // Calcular mejores cuotas por mercado
+      const bestOdds = this.calculateBestOdds(processedOdds);
+
+      return {
+        id: 0, // Se asignará al guardar en DB
+        api_event_id: event.id,
+        sport_key: event.sport_key,
+        home_team: event.home_team,
+        away_team: event.away_team,
+        commence_time: new Date(event.commence_time),
+        odds: bestOdds
+      };
+    });
   }
 
-  // Sincronizar deportes de la API con la base de datos
-  async syncSports(): Promise<void> {
+  // Mapear nombres de equipos a outcomes estándar
+  private mapTeamToOutcome(teamName: string, homeTeam: string, awayTeam: string): string {
+    if (teamName === homeTeam) return 'home';
+    if (teamName === awayTeam) return 'away';
+    return 'draw'; // Para deportes que permiten empate
+  }
+
+  // Calcular las mejores cuotas por mercado
+  private calculateBestOdds(allOdds: ProcessedOdds[]): ProcessedOdds[] {
+    const bestOddsMap = new Map<string, ProcessedOdds>();
+
+    allOdds.forEach(odd => {
+      const key = `${odd.market_type}_${odd.outcome_name}_${odd.handicap || ''}_${odd.total || ''}`;
+      const existing = bestOddsMap.get(key);
+
+      if (!existing || this.isBetterOdd(odd, existing)) {
+        bestOddsMap.set(key, odd);
+      }
+    });
+
+    return Array.from(bestOddsMap.values());
+  }
+
+  // Determinar si una cuota es mejor que otra
+  private isBetterOdd(newOdd: ProcessedOdds, existingOdd: ProcessedOdds): boolean {
+    // Para cuotas americanas, números más altos son mejores para favoritos (negativos)
+    // y números más altos son mejores para underdog (positivos)
+    if (newOdd.price >= 0 && existingOdd.price >= 0) {
+      return newOdd.price > existingOdd.price;
+    }
+    if (newOdd.price < 0 && existingOdd.price < 0) {
+      return newOdd.price > existingOdd.price; // -110 es mejor que -120
+    }
+    if (newOdd.price >= 0 && existingOdd.price < 0) {
+      return true; // Underdog es siempre mejor que favorito
+    }
+    return false; // Favorito vs underdog, mantener el existente
+  }
+
+  // Sincronizar evento con la base de datos
+  async syncEventToDatabase(processedEvent: ProcessedEvent): Promise<number> {
     try {
-      const sports = await this.getSports();
-      
-      // Filtrar solo deportes objetivo (béisbol, fútbol, baloncesto, hockey)
-      const targetGroups = ['Baseball', 'Soccer', 'Basketball', 'Ice Hockey'];
-      const filteredSports = sports.filter(sport => 
-        targetGroups.includes(sport.group) && 
-        sport.active &&
-        !sport.has_outrights
+      // Buscar o crear el deporte
+      let sport = await this.sportModel.findByApiKey(processedEvent.sport_key);
+      if (!sport) {
+        // Si el deporte no existe, crearlo
+        sport = await this.sportModel.create({
+          api_sport_key: processedEvent.sport_key,
+          name: processedEvent.sport_key.replace(/_/g, ' ').toUpperCase(),
+          group_name: this.getSportGroup(processedEvent.sport_key),
+          description: `Auto-imported from Odds API`,
+          active: true
+        });
+      }
+
+      // Buscar o crear la competición (usando sport_key como nombre de competición)
+      let competition = await this.competitionModel.findByName(
+        this.getCompetitionName(processedEvent.sport_key), 
+        sport.id
       );
       
-      // Insertar o actualizar deportes en la base de datos
-      for (const sport of filteredSports) {
-        const query = `
-          INSERT INTO sports (api_sport_key, name, group_name, description, active)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (api_sport_key) 
-          DO UPDATE SET
-            name = EXCLUDED.name,
-            group_name = EXCLUDED.group_name,
-            description = EXCLUDED.description,
-            active = EXCLUDED.active,
-            updated_at = NOW()
-        `;
-        
-        await pool.query(query, [
-          sport.key,
-          sport.title,
-          sport.group,
-          sport.description,
-          sport.active
-        ]);
+      if (!competition) {
+        competition = await this.competitionModel.create({
+          sport_id: sport.id!,
+          name: this.getCompetitionName(processedEvent.sport_key),
+          country: 'International',
+          active: true
+        });
       }
+
+      // Verificar si el evento ya existe
+      let event = await this.eventModel.findByApiId(processedEvent.api_event_id);
       
-      console.log(`Sincronizados ${filteredSports.length} deportes con la base de datos`);
+      if (!event) {
+        // Crear nuevo evento
+        event = await this.eventModel.create({
+          competition_id: competition.id!,
+          api_event_id: processedEvent.api_event_id,
+          home_team: processedEvent.home_team,
+          away_team: processedEvent.away_team,
+          commence_time: processedEvent.commence_time,
+          status: 'upcoming'
+        });
+      } else {
+        // Actualizar evento existente
+        event = await this.eventModel.update(event.id!, {
+          home_team: processedEvent.home_team,
+          away_team: processedEvent.away_team,
+          commence_time: processedEvent.commence_time,
+          status: 'upcoming'
+        });
+      }
+
+      // Eliminar cuotas anteriores del evento
+      await this.oddsModel.deleteByEventId(event.id!);
+
+      // Insertar nuevas cuotas
+      for (const odd of processedEvent.odds) {
+        await this.oddsModel.create({
+          event_id: event.id!,
+          market_type: odd.market_type,
+          outcome_name: odd.outcome_name,
+          price: odd.price,
+          handicap: odd.handicap,
+          total: odd.total
+        });
+      }
+
+      return event.id!;
     } catch (error) {
-      console.error('Error al sincronizar deportes:', error);
+      console.error('Error sincronizando evento con base de datos:', error);
       throw error;
     }
   }
 
-  // Sincronizar eventos y cuotas para un deporte específico
-  async syncEventsBySport(sportKey: string): Promise<void> {
+  // Obtener nombre de competición basado en sport_key
+  private getCompetitionName(sportKey: string): string {
+    const competitionMap: { [key: string]: string } = {
+      'americanfootball_nfl': 'NFL',
+      'basketball_nba': 'NBA',
+      'baseball_mlb': 'MLB',
+      'icehockey_nhl': 'NHL',
+      'soccer_epl': 'Premier League',
+      'soccer_spain_la_liga': 'La Liga',
+      'soccer_italy_serie_a': 'Serie A',
+      'soccer_germany_bundesliga': 'Bundesliga',
+      'soccer_france_ligue_one': 'Ligue 1'
+    };
+
+    return competitionMap[sportKey] || sportKey.replace(/_/g, ' ').toUpperCase();
+  }
+
+  // Obtener grupo de deporte
+  private getSportGroup(sportKey: string): string {
+    if (sportKey.includes('football')) return 'American Football';
+    if (sportKey.includes('basketball')) return 'Basketball';
+    if (sportKey.includes('baseball')) return 'Baseball';
+    if (sportKey.includes('hockey')) return 'Ice Hockey';
+    if (sportKey.includes('soccer')) return 'Soccer';
+    if (sportKey.includes('tennis')) return 'Tennis';
+    return 'Other';
+  }
+
+  // Método principal para obtener y sincronizar eventos
+  async fetchAndSyncEvents(sportKey: string): Promise<ProcessedEvent[]> {
     try {
-      const events = await this.getOddsByEvent(sportKey);
+      console.log(`🔄 Obteniendo eventos para ${sportKey} desde Odds API...`);
       
-      // Buscar el id del deporte en la base de datos
-      const sportQuery = 'SELECT id FROM sports WHERE api_sport_key = $1';
-      const sportResult = await pool.query(sportQuery, [sportKey]);
+      const apiEvents = await this.getEventsBySport(sportKey);
+      console.log(`📥 Obtenidos ${apiEvents.length} eventos de la API`);
       
-      if (!sportResult.rows.length) {
-        throw new Error(`Deporte con clave ${sportKey} no encontrado en la base de datos`);
-      }
-      
-      const sportId = sportResult.rows[0].id;
-      
-      // Procesar cada evento
-      for (const event of events) {
-        // Verificar si ya existe competición para este deporte
-        const competitionKey = `${sportKey}_regular`;
-        const competitionName = `${event.sport_key.split('_')[0].toUpperCase()} Regular Season`;
-        
-        // Insertar o recuperar competición
-        const compQuery = `
-          INSERT INTO competitions (sport_id, api_competition_key, name, description, active)
-          VALUES ($1, $2, $3, $4, true)
-          ON CONFLICT (api_competition_key) 
-          DO UPDATE SET
-            name = EXCLUDED.name,
-            active = true,
-            updated_at = NOW()
-          RETURNING id
-        `;
-        
-        const compResult = await pool.query(compQuery, [
-          sportId,
-          competitionKey,
-          competitionName,
-          competitionName
-        ]);
-        
-        const competitionId = compResult.rows[0].id;
-        
-        // Insertar o actualizar evento
-        const eventQuery = `
-          INSERT INTO events (
-            competition_id, api_event_id, home_team, away_team, commence_time, status
-          )
-          VALUES ($1, $2, $3, $4, $5, 'upcoming')
-          ON CONFLICT (api_event_id) 
-          DO UPDATE SET
-            home_team = EXCLUDED.home_team,
-            away_team = EXCLUDED.away_team,
-            commence_time = EXCLUDED.commence_time,
-            updated_at = NOW()
-          RETURNING id
-        `;
-        
-        const eventResult = await pool.query(eventQuery, [
-          competitionId,
-          event.id,
-          event.home_team,
-          event.away_team,
-          event.commence_time
-        ]);
-        
-        const eventId = eventResult.rows[0].id;
-        
-        // Procesar las cuotas del evento
-        if (event.bookmakers && event.bookmakers.length > 0) {
-          // Usar el primer bookmaker disponible
-          const bookmaker = event.bookmakers[0];
-          
-          for (const market of bookmaker.markets) {
-            for (const outcome of market.outcomes) {
-              // Determinar el tipo de mercado y resultado
-              let marketType = 'h2h';
-              let outcomeName = 'home';
-              let handicap: number | null = null;
-              let total: number | null = null;
-              
-              if (market.key === 'h2h') {
-                if (outcome.name === event.home_team) {
-                  outcomeName = 'home';
-                } else if (outcome.name === event.away_team) {
-                  outcomeName = 'away';
-                } else {
-                  outcomeName = 'draw';
-                }
-              } else if (market.key === 'spreads') {
-                marketType = 'spread';
-                outcomeName = outcome.name === event.home_team ? 'home' : 'away';
-                handicap = outcome.point || 0;
-              } else if (market.key === 'totals') {
-                marketType = 'totals';
-                outcomeName = outcome.name.toLowerCase().includes('over') ? 'over' : 'under';
-                total = outcome.point || 0;
-              }
-              
-              // Insertar o actualizar cuota
-              const oddsQuery = `
-                INSERT INTO odds (
-                  event_id, bookmaker, market_type, outcome_name, price, handicap, total, last_update
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (event_id, bookmaker, market_type, outcome_name) 
-                DO UPDATE SET
-                  price = EXCLUDED.price,
-                  handicap = EXCLUDED.handicap,
-                  total = EXCLUDED.total,
-                  last_update = EXCLUDED.last_update,
-                  updated_at = NOW()
-              `;
-              
-              await pool.query(oddsQuery, [
-                eventId,
-                bookmaker.key,
-                marketType,
-                outcomeName,
-                outcome.price,
-                handicap,
-                total,
-                bookmaker.last_update
-              ]);
-            }
-          }
+      const processedEvents = this.processApiEvents(apiEvents);
+      console.log(`⚙️  Procesados ${processedEvents.length} eventos`);
+
+      // Sincronizar cada evento con la base de datos
+      for (const event of processedEvents) {
+        try {
+          const eventId = await this.syncEventToDatabase(event);
+          event.id = eventId;
+          console.log(`✅ Evento sincronizado: ${event.away_team} @ ${event.home_team} (ID: ${eventId})`);
+        } catch (error) {
+          console.error(`❌ Error sincronizando evento ${event.api_event_id}:`, error);
         }
       }
-      
-      console.log(`Sincronizados ${events.length} eventos para ${sportKey}`);
+
+      return processedEvents;
     } catch (error) {
-      console.error(`Error al sincronizar eventos para ${sportKey}:`, error);
+      console.error(`Error en fetchAndSyncEvents para ${sportKey}:`, error);
       throw error;
     }
   }
-  
-  // Obtener eventos con sus cuotas para la interfaz de usuario
-  async getEventsWithOdds(sportKey: string, limit: number = 20): Promise<any[]> {
+
+  // Validar y sincronizar evento específico por API ID
+  async validateAndSyncEvent(apiEventId: string): Promise<number | null> {
     try {
-      // Si sportKey es 'all', obtener eventos de todos los deportes soportados
-      if (sportKey === 'all') {
-        const query = `
-          SELECT e.id, e.api_event_id, e.home_team, e.away_team, e.commence_time, 
-                 s.name as sport, c.name as competition
-          FROM events e
-          JOIN competitions c ON e.competition_id = c.id
-          JOIN sports s ON c.sport_id = s.id
-          WHERE e.status = 'upcoming' AND e.commence_time > NOW()
-          ORDER BY e.commence_time
-          LIMIT $1
-        `;
-        
-        const result = await pool.query(query, [limit]);
-        const events = result.rows;
-        
-        // Para cada evento, obtener sus cuotas
-        for (const event of events) {
-          const oddsQuery = `
-            SELECT id, market_type, outcome_name, price, handicap, total, last_update
-            FROM odds
-            WHERE event_id = $1
-            ORDER BY market_type, outcome_name
-          `;
-          
-          const oddsResult = await pool.query(oddsQuery, [event.id]);
-          event.odds = oddsResult.rows;
-        }
-        
-        return events;
-      } else {
-        // Obtener eventos de un deporte específico
-        const sportIdQuery = 'SELECT id FROM sports WHERE api_sport_key = $1';
-        const sportResult = await pool.query(sportIdQuery, [sportKey]);
-        
-        if (!sportResult.rows.length) {
-          throw new Error(`Deporte con clave ${sportKey} no encontrado`);
-        }
-        
-        const sportId = sportResult.rows[0].id;
-        
-        const query = `
-          SELECT e.id, e.api_event_id, e.home_team, e.away_team, e.commence_time, 
-                 s.name as sport, c.name as competition
-          FROM events e
-          JOIN competitions c ON e.competition_id = c.id
-          JOIN sports s ON c.sport_id = s.id
-          WHERE s.id = $1 AND e.status = 'upcoming' AND e.commence_time > NOW()
-          ORDER BY e.commence_time
-          LIMIT $2
-        `;
-        
-        const result = await pool.query(query, [sportId, limit]);
-        const events = result.rows;
-        
-        // Para cada evento, obtener sus cuotas
-        for (const event of events) {
-          const oddsQuery = `
-            SELECT id, market_type, outcome_name, price, handicap, total, last_update
-            FROM odds
-            WHERE event_id = $1
-            ORDER BY market_type, outcome_name
-          `;
-          
-          const oddsResult = await pool.query(oddsQuery, [event.id]);
-          event.odds = oddsResult.rows;
-        }
-        
-        return events;
+      // Buscar si el evento ya existe en nuestra DB
+      const existingEvent = await this.eventModel.findByApiId(apiEventId);
+      if (existingEvent) {
+        return existingEvent.id!;
       }
+
+      // Si no existe, necesitamos obtenerlo de la API
+      // Esto requiere conocer el sport_key, así que buscaremos en varios deportes principales
+      const mainSports = [
+        'americanfootball_nfl',
+        'basketball_nba', 
+        'baseball_mlb',
+        'icehockey_nhl',
+        'soccer_epl'
+      ];
+
+      for (const sportKey of mainSports) {
+        try {
+          const events = await this.getEventsBySport(sportKey);
+          const targetEvent = events.find(e => e.id === apiEventId);
+          
+          if (targetEvent) {
+            const processedEvents = this.processApiEvents([targetEvent]);
+            const eventId = await this.syncEventToDatabase(processedEvents[0]);
+            console.log(`✅ Evento validado y sincronizado: ${targetEvent.away_team} @ ${targetEvent.home_team}`);
+            return eventId;
+          }
+        } catch (error) {
+          console.warn(`No se pudo buscar en ${sportKey}:`, error);
+          continue;
+        }
+      }
+
+      console.warn(`⚠️  Evento ${apiEventId} no encontrado en ningún deporte`);
+      return null;
     } catch (error) {
-      console.error('Error al obtener eventos con cuotas:', error);
+      console.error('Error validando evento:', error);
       throw error;
+    }
+  }
+
+  // Obtener información de uso de la API
+  async getApiUsage(): Promise<any> {
+    try {
+      const response = await axios.get(`${this.baseUrl}/sports/`, {
+        params: {
+          apiKey: this.apiKey
+        }
+      });
+
+      return {
+        remaining: response.headers['x-requests-remaining'],
+        used: response.headers['x-requests-used'],
+        resetTime: response.headers['x-requests-reset']
+      };
+    } catch (error) {
+      console.error('Error obteniendo uso de API:', error);
+      return null;
     }
   }
 }

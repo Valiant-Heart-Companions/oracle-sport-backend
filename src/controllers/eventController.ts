@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AppError } from '../middlewares/errorHandler';
 import oddsApiService from '../services/oddsApiService';
+import { QueryResult } from 'pg';
 
 export class EventController {
   async getEvents(req: Request, res: Response, next: NextFunction) {
@@ -138,6 +139,39 @@ export class EventController {
     } catch (error) {
       next(error);
     }
+  }
+
+  // Agregar al EventModel existente
+  async findByApiId(apiEventId: string): Promise<Event | null> {
+    const query = 'SELECT * FROM events WHERE api_event_id = $1';
+    const result: QueryResult = await pool.query(query, [apiEventId]);
+    
+    return result.rows.length ? result.rows[0] : null;
+  }
+
+  async findByApiIdWithOdds(apiEventId: string): Promise<any | null> {
+    const query = `
+      SELECT e.*, c.name as competition_name, s.name as sport_name, s.api_sport_key,
+            json_agg(
+              json_build_object(
+                'id', o.id,
+                'market_type', o.market_type,
+                'outcome_name', o.outcome_name,
+                'price', o.price,
+                'handicap', o.handicap,
+                'total', o.total
+              )
+            ) FILTER (WHERE o.id IS NOT NULL) as odds
+      FROM events e
+      JOIN competitions c ON e.competition_id = c.id
+      JOIN sports s ON c.sport_id = s.id
+      LEFT JOIN odds o ON e.id = o.event_id
+      WHERE e.api_event_id = $1
+      GROUP BY e.id, c.name, s.name, s.api_sport_key
+    `;
+    
+    const result: QueryResult = await pool.query(query, [apiEventId]);
+    return result.rows.length ? result.rows[0] : null;
   }
 }
 
