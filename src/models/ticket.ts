@@ -307,6 +307,8 @@ export class TicketModel {
     const result: QueryResult = await this.db.query(query, queryParams);
     return result.rows;
   }
+
+  
 }
 
 export default new TicketModel();

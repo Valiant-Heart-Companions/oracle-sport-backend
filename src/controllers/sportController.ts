@@ -260,7 +260,7 @@ class SportController {
   // Actualizar eventos y cuotas para un deporte específico (solo admin)
   async syncSportEvents(req: Request, res: Response, next: NextFunction) {
     try {
-      const sportApiKey = req.params.apiKey;
+      const sportApiKey = process.env.ODDS_API_KEY;
       
       if (!sportApiKey) {
         throw new AppError('API key de deporte requerida', 400);

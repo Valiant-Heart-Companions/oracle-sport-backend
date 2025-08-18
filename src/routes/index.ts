@@ -8,6 +8,7 @@ import ticketRoutes from './ticketRoutes';
 import betRoutes from './betRoutes';
 import depositRoutes from './depositRoutes';
 import withdrawalRoutes from './withdrawalRoutes';
+import oddsRoutes from './oddsApiRoutes';
 
 const router = express.Router();
 
@@ -23,5 +24,6 @@ router.use('/tickets', ticketRoutes);
 router.use('/bets', betRoutes);
 router.use('/deposits', depositRoutes);
 router.use('/withdrawals', withdrawalRoutes);
+router.use('/odds-api', oddsRoutes);
 
 export default router;

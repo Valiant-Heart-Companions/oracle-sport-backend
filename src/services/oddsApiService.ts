@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { EventModel } from '../models/event';
-import { OddsModel } from '../models/odds';
+import { OddsModel } from '../models/odd';
 import { CompetitionModel } from '../models/competition';
 import { SportModel } from '../models/sport';
 
@@ -132,6 +132,80 @@ class OddsApiService {
       throw new Error('Error al obtener eventos de la API');
     }
   }
+
+  async syncSports(): Promise<void> {
+    try {
+      
+      const url = `${this.baseUrl}/sports/?apiKey=${this.apiKey}`;
+      const { data } = await axios.get(url);
+      const pool = require('../config/database').default;
+      for (const sport of data) {
+        await pool.query(
+          `
+          INSERT INTO sports (key, group_name, title, active)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (key) DO UPDATE
+          SET group_name = EXCLUDED.group_name,
+              title = EXCLUDED.title,
+              active = EXCLUDED.active
+          `,
+          [
+            sport.key,
+            sport.title,
+            sport.active ? 1 : 0,
+            sport.group,
+            sport.details ?? null,
+          ]
+        );
+      }
+
+      console.log("✅ Deportes sincronizados correctamente");
+    } catch (error) {
+      console.error("❌ Error al sincronizar deportes:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sincroniza los eventos de un deporte específico desde Odds API con la tabla `events`
+   * @param sportKey clave del deporte (ejemplo: "soccer_epl")
+   */
+  async syncEventsBySport(sportKey: string): Promise<void> {
+    try {
+      const url = `${this.baseUrl}/sports/${sportKey}/odds/?apiKey=${this.apiKey}&regions=us&markets=h2h,spreads,totals`;
+      const { data } = await axios.get(url);
+      const pool = require('../config/database').default;
+      for (const event of data) {
+        await pool.query(
+           `
+          INSERT INTO events (id, sport_key, sport_title, commence_time, home_team, away_team)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (id) DO UPDATE
+          SET sport_key = EXCLUDED.sport_key,
+              sport_title = EXCLUDED.sport_title,
+              commence_time = EXCLUDED.commence_time,
+              home_team = EXCLUDED.home_team,
+              away_team = EXCLUDED.away_team
+          `,
+          [
+            event.id,
+            event.sport_key,
+            event.sport_title,
+            event.home_team,
+            event.away_team,
+            event.commence_time,
+            JSON.stringify(event.bookmakers ?? []),
+          ]
+        );
+      }
+
+      console.log(`✅ Eventos de ${sportKey} sincronizados correctamente`);
+    } catch (error) {
+      console.error(`❌ Error al sincronizar eventos de ${sportKey}:`, error);
+      throw error;
+    }
+  }
+  
 
   // Procesar y transformar datos de la API
   private processApiEvents(apiEvents: OddsApiEvent[]): ProcessedEvent[] {
@@ -289,12 +363,12 @@ class OddsApiService {
       }
 
       // Eliminar cuotas anteriores del evento
-      await this.oddsModel.deleteByEventId(event.id!);
+      await this.oddsModel.deleteByEventId(event?.id!);
 
       // Insertar nuevas cuotas
       for (const odd of processedEvent.odds) {
         await this.oddsModel.create({
-          event_id: event.id!,
+          event_id: event?.id!,
           market_type: odd.market_type,
           outcome_name: odd.outcome_name,
           price: odd.price,
@@ -303,7 +377,7 @@ class OddsApiService {
         });
       }
 
-      return event.id!;
+      return event?.id!;
     } catch (error) {
       console.error('Error sincronizando evento con base de datos:', error);
       throw error;
