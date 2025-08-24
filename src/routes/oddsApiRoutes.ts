@@ -11,8 +11,8 @@ router.get('/events/:sportKey', oddsApiController.getEventsBySport);
 
 // Rutas administrativas
 router.post('/sync/all', 
-  authenticateToken, 
-  authorizeAdmin, 
+  //authenticateToken, 
+//  authorizeAdmin, 
   oddsApiController.syncAllMainSports
 );
 

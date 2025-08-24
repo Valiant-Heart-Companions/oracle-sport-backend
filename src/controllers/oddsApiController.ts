@@ -44,11 +44,11 @@ class OddsApiController {
   async syncAllMainSports(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const mainSports = [
-        'americanfootball_nfl',
+        'soccer_epl',
         'basketball_nba',
         'baseball_mlb',
         'icehockey_nhl',
-        'soccer_epl'
+        'americanfootball_nfl'
       ];
 
       const results = [];
@@ -56,7 +56,8 @@ class OddsApiController {
       for (const sportKey of mainSports) {
         try {
           console.log(`🔄 Sincronizando ${sportKey}...`);
-          const events = await oddsApiService.fetchAndSyncEvents(sportKey);
+          let events = await oddsApiService.fetchAndSyncEvents(sportKey);
+          
           results.push({
             sport: sportKey,
             events_count: events.length,

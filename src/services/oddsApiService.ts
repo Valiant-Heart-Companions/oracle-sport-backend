@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { EventModel } from '../models/event';
-import { OddsModel } from '../models/odd';
+import { OddsModel, Odds } from '../models/odd';
 import { CompetitionModel } from '../models/competition';
 import { SportModel } from '../models/sport';
 
@@ -367,19 +367,23 @@ class OddsApiService {
 
       // Insertar nuevas cuotas
       for (const odd of processedEvent.odds) {
-        await this.oddsModel.create({
+        
+        let _odd: Odds = {
           event_id: event?.id!,
           market_type: odd.market_type,
           outcome_name: odd.outcome_name,
           price: odd.price,
           handicap: odd.handicap,
-          total: odd.total
-        });
+          total: odd.total,
+          bookmaker: 'Corredor Virtual',
+        };
+        //console.log(_odd)
+        await this.oddsModel.create(_odd);
       }
 
       return event?.id!;
     } catch (error) {
-      console.error('Error sincronizando evento con base de datos:', error);
+      console.error('Error sincronizando evento* con base de datos:', error);
       throw error;
     }
   }
@@ -424,7 +428,7 @@ class OddsApiService {
       console.log(`⚙️  Procesados ${processedEvents.length} eventos`);
 
       // Sincronizar cada evento con la base de datos
-      for (const event of processedEvents) {
+      for (let event of processedEvents) {
         try {
           const eventId = await this.syncEventToDatabase(event);
           event.id = eventId;
