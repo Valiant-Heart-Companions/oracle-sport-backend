@@ -11,6 +11,8 @@ export interface Odds {
   total?: number;
   created_at?: Date;
   updated_at?: Date;
+  bookmaker?: string | 'Corredor Virtual',
+  last_update?: Date;
 }
 
 export interface OddsWithEvent extends Odds {
@@ -33,9 +35,9 @@ export class OddsModel {
   async create(odds: Odds): Promise<Odds> {
     const query = `
       INSERT INTO odds 
-        (event_id, market_type, outcome_name, price, handicap, total)
+        (event_id, market_type, outcome_name, price, handicap, total, bookmaker)
       VALUES 
-        ($1, $2, $3, $4, $5, $6)
+        ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `;
     
@@ -45,7 +47,8 @@ export class OddsModel {
       odds.outcome_name,
       odds.price,
       odds.handicap,
-      odds.total
+      odds.total,
+      odds.bookmaker
     ];
     
     const result: QueryResult = await this.db.query(query, values);
