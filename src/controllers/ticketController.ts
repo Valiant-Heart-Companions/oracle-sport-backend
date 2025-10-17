@@ -20,6 +20,7 @@ class TicketController {
       
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.error(errors);
         throw new AppError('Datos de apuesta inválidos', 400);
       }
       
@@ -28,16 +29,21 @@ class TicketController {
       
       // Validar que hay selecciones
       if (!selections || !Array.isArray(selections) || selections.length === 0) {
+        console.error('No selections provided');
         throw new AppError('Debe incluir al menos una selección', 400);
       }
       
       // Verificar saldo del usuario
       const user = await userModel.findById(userId);
+      
       if (!user) {
         throw new AppError('Usuario no encontrado', 404);
-      }
-      
-      if (typeof user.balance !== 'number' || user.balance < stake_amount) {
+      }      
+
+      const userBalance = user.balance as number;
+
+      if (userBalance < stake_amount) {
+        console.error('Insufficient balance:', user.balance);
         throw new AppError('Saldo insuficiente para realizar esta apuesta', 400);
       }
       
